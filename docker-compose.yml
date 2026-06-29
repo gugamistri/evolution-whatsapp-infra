@@ -34,7 +34,10 @@ services:
   # via rede compartilhada Coolify ou porta AMQP
   # ============================================
   rabbitmq:
-    image: rabbitmq:3.13-management-alpine
+    build:
+      context: .
+      dockerfile: docker/rabbitmq.Dockerfile
+    image: evolution-infra-rabbitmq
     restart: unless-stopped
     hostname: evolution-rabbitmq
     environment:
@@ -44,12 +47,6 @@ services:
       RABBITMQ_CRM_PASSWORD: ${RABBITMQ_CRM_PASSWORD}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-    configs:
-      - source: rabbitmq_config
-        target: /etc/rabbitmq/rabbitmq.conf
-      - source: rabbitmq_init_crm
-        target: /docker-entrypoint-init.d/20-init-crm-user.sh
-        mode: 0555
     networks:
       internal:
       leadpronto_shared:
@@ -243,13 +240,13 @@ services:
   # MONITORING: Prometheus
   # ============================================
   prometheus:
-    image: prom/prometheus:v2.53.0
+    build:
+      context: .
+      dockerfile: docker/prometheus.Dockerfile
+    image: evolution-infra-prometheus
     restart: unless-stopped
     expose:
       - "9090"
-    configs:
-      - source: prometheus_config
-        target: /etc/prometheus/prometheus.yml
     volumes:
       - prometheus_data:/prometheus
     command:
@@ -272,7 +269,10 @@ services:
   # MONITORING: Grafana
   # ============================================
   grafana:
-    image: grafana/grafana:10.4.3
+    build:
+      context: .
+      dockerfile: docker/grafana.Dockerfile
+    image: evolution-infra-grafana
     restart: unless-stopped
     expose:
       - "3000"
@@ -282,13 +282,6 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
       - GF_INSTALL_PLUGINS=grafana-clock-panel
-    configs:
-      - source: grafana_datasource
-        target: /etc/grafana/provisioning/datasources/datasource.yml
-      - source: grafana_dashboard_provider
-        target: /etc/grafana/provisioning/dashboards/dashboard.yml
-      - source: grafana_dashboard
-        target: /etc/grafana/dashboards/evolution-dashboard.json
     volumes:
       - grafana_data:/var/lib/grafana
     mem_limit: 512m
@@ -308,20 +301,6 @@ networks:
   leadpronto_shared:
     external: true
     name: ${COOLIFY_SHARED_NETWORK:-leadpronto_shared}
-
-configs:
-  prometheus_config:
-    file: ./prometheus/prometheus.yml
-  grafana_datasource:
-    file: ./grafana/provisioning/datasources/datasource.yml
-  grafana_dashboard_provider:
-    file: ./grafana/provisioning/dashboards/dashboard.yml
-  grafana_dashboard:
-    file: ./grafana/dashboards/evolution-dashboard.json
-  rabbitmq_config:
-    file: ./rabbitmq/rabbitmq.conf
-  rabbitmq_init_crm:
-    file: ./rabbitmq/init-add-crm-user.sh
 
 volumes:
   evolution_instances:
