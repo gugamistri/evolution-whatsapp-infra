@@ -95,7 +95,7 @@ services:
 
       # --- Database: Postgres exclusivo do Evolution (override via DATABASE_CONNECTION_URI) ---
       DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: ${DATABASE_CONNECTION_URI:-postgresql://${POSTGRES_USER:-evolution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evolution}?schema=public}
+      DATABASE_CONNECTION_URI: ${DATABASE_CONNECTION_URI}
       DATABASE_CONNECTION_CLIENT_NAME: ${DATABASE_CONNECTION_CLIENT_NAME:-evolution_prod}
 
       # --- Persistence: NÃO salva mensagens (CRM é a fonte da verdade) ---
@@ -114,7 +114,7 @@ services:
 
       # --- RabbitMQ: interno (override via RABBITMQ_URI) ---
       RABBITMQ_ENABLED: true
-      RABBITMQ_URI: ${RABBITMQ_URI:-amqp://${RABBITMQ_USER:-evolution}:${RABBITMQ_PASSWORD}@rabbitmq:5672/${RABBITMQ_VHOST:-evolution}}
+      RABBITMQ_URI: ${RABBITMQ_URI}
       RABBITMQ_EXCHANGE_NAME: ${RABBITMQ_EXCHANGE_NAME:-evolution}
       RABBITMQ_GLOBAL_ENABLED: true
       # Apenas eventos essenciais
