@@ -1,0 +1,25 @@
+# Environment
+.env
+
+# Docker volumes (should not be committed)
+volumes/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node / Python (if any local scripts)
+node_modules/
+__pycache__/
+*.pyc
+
+# Backup files
+*.bak
+*.backup
