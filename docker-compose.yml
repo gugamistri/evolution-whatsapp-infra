@@ -44,8 +44,12 @@ services:
       RABBITMQ_CRM_PASSWORD: ${RABBITMQ_CRM_PASSWORD}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
-      - ./rabbitmq/init-add-crm-user.sh:/docker-entrypoint-init.d/20-init-crm-user.sh:ro
+    configs:
+      - source: rabbitmq_config
+        target: /etc/rabbitmq/rabbitmq.conf
+      - source: rabbitmq_init_crm
+        target: /docker-entrypoint-init.d/20-init-crm-user.sh
+        mode: 0555
     networks:
       internal:
       leadpronto_shared:
@@ -243,18 +247,20 @@ services:
     restart: unless-stopped
     expose:
       - "9090"
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
     volumes:
-      # MONTAR DIRETÓRIO, NÃO ARQUIVO (Coolify-friendly)
-      - ./prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=15d'
       - '--storage.tsdb.retention.size=5GB'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
+    networks:
+      - internal
+      - default
     mem_limit: 2g
     logging:
       driver: json-file
@@ -276,10 +282,14 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
       - GF_INSTALL_PLUGINS=grafana-clock-panel
+    configs:
+      - source: grafana_datasource
+        target: /etc/grafana/provisioning/datasources/datasource.yml
+      - source: grafana_dashboard_provider
+        target: /etc/grafana/provisioning/dashboards/dashboard.yml
+      - source: grafana_dashboard
+        target: /etc/grafana/dashboards/evolution-dashboard.json
     volumes:
-      # MONTAR DIRETÓRIOS, NÃO ARQUIVOS
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     mem_limit: 512m
     logging:
@@ -298,6 +308,20 @@ networks:
   leadpronto_shared:
     external: true
     name: ${COOLIFY_SHARED_NETWORK:-leadpronto_shared}
+
+configs:
+  prometheus_config:
+    file: ./prometheus/prometheus.yml
+  grafana_datasource:
+    file: ./grafana/provisioning/datasources/datasource.yml
+  grafana_dashboard_provider:
+    file: ./grafana/provisioning/dashboards/dashboard.yml
+  grafana_dashboard:
+    file: ./grafana/dashboards/evolution-dashboard.json
+  rabbitmq_config:
+    file: ./rabbitmq/rabbitmq.conf
+  rabbitmq_init_crm:
+    file: ./rabbitmq/init-add-crm-user.sh
 
 volumes:
   evolution_instances:
