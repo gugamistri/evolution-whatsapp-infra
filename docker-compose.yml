@@ -2,15 +2,81 @@ version: '3.8'
 
 services:
   # ============================================
+  # DATA: PostgreSQL (exclusivo do Evolution, rede interna)
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-evolution}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-evolution}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-evolution} -d ${POSTGRES_DB:-evolution}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
+  # MESSAGING: RabbitMQ
+  # Evolution publica; CRM (leadpronto.ai) consome
+  # via rede compartilhada Coolify ou porta AMQP
+  # ============================================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    hostname: evolution-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-evolution}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-evolution}
+      RABBITMQ_CRM_PASSWORD: ${RABBITMQ_CRM_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/init-add-crm-user.sh:/docker-entrypoint-init.d/20-init-crm-user.sh:ro
+    networks:
+      internal:
+      leadpronto_shared:
+        aliases:
+          - evolution-rabbitmq
+          - rabbitmq
+    # Descomente se o CRM não estiver na rede compartilhada:
+    # ports:
+    #   - "${RABBITMQ_PUBLISH_PORT:-5672}:5672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
   # CORE: Evolution API (monitoring-only, lean)
   # ============================================
   evolution-api:
     image: evoapicloud/evolution-api:latest
     restart: unless-stopped
-    # Coolify expõe a porta automaticamente ou via config de domain
-    # Não defina container_name — Coolify gerencia
-    ports:
-      - "8080:8080"
+    # Coolify expõe via proxy/domínio — não publique ports no host
+    expose:
+      - "8080"
     environment:
       # --- Core Server ---
       SERVER_TYPE: http
@@ -27,9 +93,9 @@ services:
       LOG_BAILEYS: error
       EVENT_EMITTER_MAX_LISTENERS: 50
 
-      # --- Database: External Postgres ---
+      # --- Database: Postgres exclusivo do Evolution (override via DATABASE_CONNECTION_URI) ---
       DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: ${DATABASE_CONNECTION_URI}
+      DATABASE_CONNECTION_URI: ${DATABASE_CONNECTION_URI:-postgresql://${POSTGRES_USER:-evolution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evolution}?schema=public}
       DATABASE_CONNECTION_CLIENT_NAME: ${DATABASE_CONNECTION_CLIENT_NAME:-evolution_prod}
 
       # --- Persistence: NÃO salva mensagens (CRM é a fonte da verdade) ---
@@ -46,9 +112,9 @@ services:
       # --- Instance Lifecycle ---
       DEL_INSTANCE: false
 
-      # --- RabbitMQ: External ---
+      # --- RabbitMQ: interno (override via RABBITMQ_URI) ---
       RABBITMQ_ENABLED: true
-      RABBITMQ_URI: ${RABBITMQ_URI}
+      RABBITMQ_URI: ${RABBITMQ_URI:-amqp://${RABBITMQ_USER:-evolution}:${RABBITMQ_PASSWORD}@rabbitmq:5672/${RABBITMQ_VHOST:-evolution}}
       RABBITMQ_EXCHANGE_NAME: ${RABBITMQ_EXCHANGE_NAME:-evolution}
       RABBITMQ_GLOBAL_ENABLED: true
       # Apenas eventos essenciais
@@ -115,6 +181,15 @@ services:
     volumes:
       - evolution_instances:/evolution/instances
 
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+    networks:
+      - internal
+
     # Coolify / Compose standalone: mem_limit em vez de deploy.resources
     mem_limit: 3g
     mem_reservation: 512m
@@ -146,8 +221,8 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
-    ports:
-      - "8081:8080"
+    expose:
+      - "8080"
     command:
       - --housekeeping_interval=15s
       - --docker_only=true
@@ -166,8 +241,8 @@ services:
   prometheus:
     image: prom/prometheus:v2.53.0
     restart: unless-stopped
-    ports:
-      - "9090:9090"
+    expose:
+      - "9090"
     volumes:
       # MONTAR DIRETÓRIO, NÃO ARQUIVO (Coolify-friendly)
       - ./prometheus:/etc/prometheus:ro
@@ -193,8 +268,8 @@ services:
   grafana:
     image: grafana/grafana:10.4.3
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
@@ -213,8 +288,23 @@ services:
         max-size: "10m"
         max-file: "3"
 
+networks:
+  # Rede privada: postgres (Evolution), evolution-api, rabbitmq
+  internal:
+    driver: bridge
+
+  # Rede compartilhada entre stacks Coolify (ex.: leadpronto.ai)
+  # Criar antes do deploy: docker network create leadpronto_shared
+  leadpronto_shared:
+    external: true
+    name: ${COOLIFY_SHARED_NETWORK:-leadpronto_shared}
+
 volumes:
   evolution_instances:
+    driver: local
+  postgres_data:
+    driver: local
+  rabbitmq_data:
     driver: local
   prometheus_data:
     driver: local
